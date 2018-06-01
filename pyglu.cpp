@@ -120,19 +120,52 @@ struct function : public object {
     }
 };
 
-template<typename T>
-struct function_record {
-    T impl;
+struct function_call {};
+
+// TODO make this an object type
+struct base_function_record {
+    virtual object call(const function_call&) = 0;
+    virtual ~base_function_record() = 0;
+
+    PyMethodDef def = {};
 };
+
+template<typename T>
+struct function_record final : public base_function_record {
+    function_record(T&& impl) : impl(std::move(impl)) {}
+
+    object call(const function_call& f) override {
+        return impl(f);
+    }
+
+    ~function_record() override = default;
+
+    const T impl;
+};
+
+extern "C" PyObject* dispatcher(PyObject* self, PyObject* args, PyObject* kwargs) {
+    base_function_record* rec = (base_function_record*) PyCapsule_GetPointer(self, nullptr);
+}
 
 struct cfunction : public function {
     cfunction() = default;
     cfunction(void (*f)()) {
-        auto impl = [f=std::move(f)]() {
+
+        auto impl = [f=std::move(f)](const function_call&) -> object {
+            // process parameters
             f();
+            // process return
+            return object();
         };
 
-        auto rec = new function_record<decltype(impl)>{std::move(impl)};
+        base_function_record* rec = new function_record<decltype(impl)>(std::move(impl));
+
+        // todo: generate signature
+        // register with python
+        rec->def.ml_name = "name";
+        rec->def.ml_doc = "docstring";
+        rec->def.ml_meth =
+
     }
 
     // TODO:
@@ -142,7 +175,7 @@ struct cfunction : public function {
 #define EXPORT __attribute__ ((visibility("default")))
 
 namespace {
-    extern "C" EXPORT PyObject* PyInit_example() {
+    extern "C" EXPORT PyObject* PyInit_pyglu() {
         // TODO: check python version
         std::cout << "compiled against " << PY_MAJOR_VERSION << "." << PY_MINOR_VERSION << std::endl;
         std::cout << "running with " << Py_GetVersion() << std::endl;
