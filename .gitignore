@@ -1,0 +1,4 @@
+*.so
+.idea
+cmake-build-*
+
